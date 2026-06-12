@@ -1,0 +1,36 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: law-agent-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/law_agent}
+    username: ${DB_USER:law_agent}
+    password: ${DB_PASSWORD:law_agent}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+
+law-agent:
+  jwt-secret: ${JWT_SECRET:change-me-change-me-change-me-change-me-32}
+  llm-provider: ${LLM_PROVIDER:mock}
+  llm-api-key: ${LLM_API_KEY:}
+  llm-base-url: ${LLM_BASE_URL:}
+  llm-model: ${LLM_MODEL:gpt-4o-mini}
+  llm-timeout-seconds: ${LLM_TIMEOUT_SECONDS:45}
+  disclaimer: "仅供初步参考，不构成正式法律意见；复杂或高风险案件建议咨询专业律师。"

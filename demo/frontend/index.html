@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>法律责任初步分析 Agent 演示</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; background: #eef2f5; color: #1f2933; }
+      .shell { display: grid; grid-template-columns: 280px minmax(420px, 1fr) 360px; height: 100vh; }
+      aside, main { min-width: 0; background: #fff; }
+      .left { border-right: 1px solid #d9dee8; }
+      .right { border-left: 1px solid #d9dee8; overflow: auto; }
+      header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #e1e6ee; }
+      .title-wrap { display: grid; gap: 2px; }
+      .engine-status { font-size: 12px; color: #64748b; font-weight: 400; }
+      button { border: 0; border-radius: 8px; padding: 9px 12px; background: #2f6fed; color: #fff; cursor: pointer; }
+      button.secondary { background: #eef2f7; color: #1f2933; }
+      .sessions { padding: 10px; display: grid; gap: 8px; }
+      .session { width: 100%; text-align: left; min-height: 56px; background: #f7fafc; color: #1f2933; border: 1px solid transparent; }
+      .session.active { border-color: #2f8f7f; background: #e7f4f1; }
+      .chat { display: grid; grid-template-rows: 56px 1fr auto; height: 100vh; background: #fbfcfd; }
+      .messages { padding: 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+      .row { display: flex; }
+      .row.user { justify-content: flex-end; }
+      .bubble { max-width: min(760px, 78%); white-space: pre-wrap; line-height: 1.65; border: 1px solid #e1e6ee; background: #fff; border-radius: 8px; padding: 12px 14px; box-shadow: 0 10px 24px rgba(15,23,42,.05); }
+      .user .bubble { color: #fff; background: #2f6fed; border-color: #2f6fed; }
+      .assistant .bubble { white-space: normal; }
+      .legal-answer { display: grid; gap: 8px; line-height: 1.65; }
+      .legal-answer h3 { margin: 4px 0 0; color: #0f766e; font-size: 14px; }
+      .legal-answer p { margin: 0; }
+      .legal-answer ul { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+      .legal-answer li { margin: 0; }
+      .legal-answer .disclaimer { padding: 10px 12px; border-radius: 8px; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+      .legal-answer .kv strong { color: #334155; }
+      .stream-status { color: #64748b; font-size: 13px; }
+      .input { display: grid; grid-template-columns: 1fr 90px; gap: 10px; padding: 12px 16px; border-top: 1px solid #e1e6ee; background: #fff; }
+      textarea { resize: none; min-height: 48px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font: inherit; }
+      .composer { display: grid; gap: 8px; border-top: 1px solid #e1e6ee; background: #fff; padding: 10px 16px 12px; }
+      .examples { display: flex; flex-wrap: wrap; gap: 8px; }
+      .examples button { background: #eef2f7; color: #1f2933; padding: 6px 8px; font-size: 12px; }
+      .input { padding: 0; border-top: 0; }
+      .panel { padding: 16px; }
+      .tag { display: inline-block; padding: 4px 8px; border-radius: 6px; background: #e7f4f1; color: #166150; font-weight: 700; }
+      h3 { margin: 18px 0 8px; font-size: 15px; }
+      li { margin: 6px 0; line-height: 1.5; }
+      .issue-item, .evidence-item { margin: 8px 0; padding: 10px; border: 1px solid #e1e6ee; border-radius: 8px; background: #fbfcfd; }
+      .issue-item p { margin: 6px 0; line-height: 1.55; }
+      .issue-item small { display: block; color: #64748b; line-height: 1.45; }
+      .gap-list { display: grid; gap: 6px; margin: 6px 0 0; padding: 0; list-style: none; }
+      .gap-list li { display: grid; grid-template-columns: auto 1fr; gap: 6px; color: #475569; font-size: 12px; line-height: 1.45; }
+      .gap-priority { padding: 1px 5px; border-radius: 4px; background: #fee2e2; color: #b91c1c; white-space: nowrap; }
+      .gap-priority.medium { background: #fef3c7; color: #92400e; }
+      .readiness-item { margin: 8px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 10px; border: 1px solid #e1e6ee; border-radius: 8px; background: #f8fafc; }
+      .readiness-item p, .readiness-item small { grid-column: 1 / -1; margin: 0; line-height: 1.45; }
+      .readiness-tag { padding: 1px 6px; border-radius: 4px; font-size: 12px; background: #dcfce7; color: #166534; }
+      .readiness-tag.needs_evidence { background: #fef3c7; color: #92400e; }
+      .readiness-tag.high_risk { background: #fee2e2; color: #b91c1c; }
+      .evidence-item { display: flex; justify-content: space-between; gap: 10px; }
+      .evidence-item span { flex-shrink: 0; color: #64748b; font-size: 12px; }
+      @media (max-width: 960px) { .shell { grid-template-columns: 220px 1fr; } .right { display: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="left">
+        <header><strong>法律咨询</strong><button id="newBtn">新建</button></header>
+        <div id="sessions" class="sessions"></div>
+      </aside>
+      <main class="chat">
+        <header>
+          <div class="title-wrap">
+            <strong id="title">法律责任初步分析 Agent</strong>
+            <span id="engineStatus" class="engine-status">连接后端中...</span>
+          </div>
+          <button class="secondary" id="reportBtn">生成报告</button>
+        </header>
+        <div id="messages" class="messages"></div>
+        <div class="composer">
+          <div class="examples">
+            <button type="button" data-example="公司拖欠工资三个月且未签劳动合同，我有工资转账记录和考勤打卡">欠薪未签合同</button>
+            <button type="button" data-example="朋友借钱2万元不还，没有借条但有微信聊天和银行转账记录，对方姓名手机号都有">借钱不还</button>
+            <button type="button" data-example="房东不退押金3000元，我有租赁合同、押金转账记录、退租交接照片和微信聊天">押金不退</button>
+            <button type="button" data-example="商家虚假宣传课程效果，我在平台下单付款了，有宣传截图、订单和客服售后聊天，想退款">消费退款</button>
+          </div>
+          <div class="input">
+            <textarea id="input" placeholder="例如：公司拖欠工资三个月且未签劳动合同"></textarea>
+            <button id="sendBtn">发送</button>
+          </div>
+        </div>
+      </main>
+      <aside class="right">
+        <header><strong>案件分析</strong></header>
+        <div id="analysis" class="panel">发送案件描述后显示结构化分析</div>
+      </aside>
+    </div>
+    <script>
+      const API = 'http://localhost:8080'
+      let activeId = 0
+      let sessions = []
+      let messages = []
+
+      async function api(path, options = {}) {
+        const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...options })
+        const json = await res.json()
+        if (json.code !== 0) throw new Error(json.message)
+        return json.data
+      }
+
+      async function init() {
+        await loadHealth()
+        await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: 'demo', password: 'demo' }) })
+        sessions = await api('/api/legal-sessions')
+        if (!sessions.length) await createSession()
+        else await openSession(sessions[0].id)
+      }
+
+      async function loadHealth() {
+        try {
+          const health = await api('/api/health')
+          document.querySelector('#engineStatus').textContent = `${health.version} / ${health.engine} / LLM：${health.llmConfigured ? health.llmProvider : '未配置'}`
+        } catch {
+          document.querySelector('#engineStatus').textContent = '后端未连接'
+        }
+      }
+
+      async function createSession() {
+        const s = await api('/api/legal-sessions', { method: 'POST', body: JSON.stringify({ title: '新的法律咨询' }) })
+        sessions.unshift(s)
+        await openSession(s.id)
+      }
+
+      async function openSession(id) {
+        activeId = id
+        const detail = await api('/api/legal-sessions/' + id)
+        messages = detail.messages
+        renderSessions()
+        renderMessages()
+        renderAnalysis(await api('/api/case-analyses/' + id))
+      }
+
+      function renderSessions() {
+        document.querySelector('#sessions').innerHTML = sessions.map(s => `<button class="session ${s.id === activeId ? 'active' : ''}" onclick="openSession(${s.id})"><b>${s.title}</b><br><small>${s.caseType || '待分析'}</small></button>`).join('')
+      }
+
+      function renderMessages() {
+        const box = document.querySelector('#messages')
+        box.innerHTML = messages.map(m => {
+          const role = m.role.toLowerCase()
+          const content = role === 'assistant' ? formatAssistantContent(m.content) : escapeHtml(m.content)
+          return `<div class="row ${role}"><div class="bubble">${content}</div></div>`
+        }).join('')
+        box.scrollTop = box.scrollHeight
+      }
+
+      function renderAnalysis(a) {
+        if (!a) {
+          document.querySelector('#analysis').textContent = '发送案件描述后显示结构化分析'
+          return
+        }
+        const arr = raw => { try { return JSON.parse(raw) } catch { return [] } }
+        const issues = arr(a.issuesJson)
+        const evidenceAssessments = arr(a.evidenceAssessmentsJson)
+        document.querySelector('#analysis').innerHTML = `
+          <span class="tag">${a.caseType}</span>
+          ${a.subType ? `<span class="tag">${escapeHtml(a.subType)}</span>` : ''}
+          ${typeof a.completenessScore === 'number' ? `<p>事实完整度：${Math.round(a.completenessScore * 100)}% / ${conclusionLabel(a.conclusionLevel)}</p>` : ''}
+          ${section('诉求目标', a.claimGoals || arr(a.claimGoalsJson))}
+          ${readinessSection(arr(a.factsJson || '{}').claimReadiness || [])}
+          ${section('缺失信息', arr(a.missingQuestionsJson))}
+          <h3>争点分析</h3>
+          ${issues.length ? issues.map(issue => `
+            <div class="issue-item">
+              <strong>${escapeHtml(issue.issue)}</strong>
+              <p>${escapeHtml(issue.application)} ${escapeHtml(issue.conclusion)}</p>
+              <small>证据强度：${strengthLabel(issue.evidenceStrength)}</small>
+              <small>已知：${escapeHtml((issue.knownFacts || []).join('、') || '暂无')}</small>
+              <small>缺失：${escapeHtml((issue.missingFacts || []).join('、') || '暂无')}</small>
+              ${gapList(issue.evidenceGaps || [])}
+            </div>
+          `).join('') : section('', arr(a.liabilityJson))}
+          ${section('证据清单', arr(a.evidenceJson))}
+          <h3>证据强度</h3>
+          ${evidenceAssessments.map(item => `
+            <div class="evidence-item">
+              <strong>${escapeHtml(item.name)}</strong>
+              <span>${item.provided ? '已出现线索' : '建议补充'} / ${strengthLabel(item.strength)}</span>
+            </div>
+          `).join('')}
+          ${section('维权路径', arr(a.actionPathJson))}
+          ${section('风险提示', arr(a.risksJson))}
+          ${citationSection(arr(a.citationsJson))}
+        `
+      }
+
+      function section(title, items) {
+        return `${title ? `<h3>${title}</h3>` : ''}<ul>${(items.length ? items : ['暂无']).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`
+      }
+
+      function gapList(gaps) {
+        if (!gaps.length) return ''
+        return `<ul class="gap-list">${gaps.map(gap => `<li><span class="gap-priority ${gap.priority === 'high' ? '' : 'medium'}">${gap.priority === 'high' ? '高优先' : '中优先'}</span><span>${escapeHtml(gap.fact)}：${escapeHtml(gap.suggestion)}</span></li>`).join('')}</ul>`
+      }
+
+      function readinessSection(items) {
+        if (!items.length) return ''
+        return `<h3>请求项成熟度</h3>${items.map(item => `<div class="readiness-item"><strong>${escapeHtml(item.claim)}</strong><span class="readiness-tag ${escapeHtml(item.status)}">${readinessLabel(item.status)}</span><p>${escapeHtml(item.reason)}</p><small>${escapeHtml(item.nextEvidence)}</small></div>`).join('')}`
+      }
+
+      function readinessLabel(value) {
+        if (value === 'ready') return '可先主张'
+        if (value === 'high_risk') return '高风险'
+        return '需补证据'
+      }
+
+      function citationSection(items) {
+        if (!items.length) return ''
+        return `<h3>参考依据</h3><ul>${items.map(item => `<li><a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a></li>`).join('')}</ul>`
+      }
+
+      function strengthLabel(value) {
+        if (value === 'strong') return '较强'
+        if (value === 'medium') return '中等'
+        return '偏弱'
+      }
+
+      function conclusionLabel(value) {
+        if (value === 'preliminary_supported') return '初步较有支撑'
+        if (value === 'preliminary_possible') return '存在主张方向'
+        return '需要补充事实'
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+      }
+
+      function cleanAssistantMarkdown(text) {
+        return String(text || '')
+          .replace(/\r/g, '')
+          .replace(/```[\s\S]*?```/g, block => block.replace(/```[a-z]*|```/gi, ''))
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/__(.*?)__/g, '$1')
+          .replace(/`([^`]+)`/g, '$1')
+          .split('\n')
+          .map(line => {
+            let value = line.trim()
+            value = value.replace(/^#{1,6}\s*/, '')
+            value = value.replace(/^>\s*/, '')
+            if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(value)) return ''
+            if (value.includes('|')) {
+              value = value.replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim()).filter(Boolean).join('  ')
+            }
+            return value
+          })
+          .filter(Boolean)
+          .join('\n')
+      }
+
+      function formatAssistantContent(text) {
+        const cleaned = cleanAssistantMarkdown(text)
+        const sectionNames = new Set(['案件识别', '关键事实与缺失事实', '关键事实', '缺失事实', '争点分析', '证据清单与证据缺口', '证据清单', '建议路径', '风险提示', '下一步追问'])
+        const lines = compactChatLines(cleaned.split('\n').map(line => line.trim()).filter(Boolean))
+        const html = []
+        let listOpen = false
+        const closeList = () => {
+          if (listOpen) {
+            html.push('</ul>')
+            listOpen = false
+          }
+        }
+        const pushListItem = (value) => {
+          if (!listOpen) {
+            html.push('<ul>')
+            listOpen = true
+          }
+          html.push(`<li>${escapeHtml(value)}</li>`)
+        }
+        for (let line of lines) {
+          line = line.replace(/^\s*[-*•]\s*/, '- ')
+          const normalizedTitle = line.replace(/[：:]\s*$/, '')
+          if (line.includes('仅供初步参考')) {
+            closeList()
+            html.push(`<p class="disclaimer">${escapeHtml(line)}</p>`)
+            continue
+          }
+          if (sectionNames.has(normalizedTitle)) {
+            closeList()
+            html.push(`<h3>${escapeHtml(normalizedTitle)}</h3>`)
+            continue
+          }
+          const numbered = line.match(/^(\d+)[.、]\s*(.+)$/)
+          if (numbered) {
+            pushListItem(numbered[2])
+            continue
+          }
+          if (line.startsWith('- ')) {
+            pushListItem(line.slice(2))
+            continue
+          }
+          closeList()
+          const kv = line.match(/^([^：:]{2,16})[：:]\s*(.+)$/)
+          if (kv) html.push(`<p class="kv"><strong>${escapeHtml(kv[1])}：</strong>${escapeHtml(kv[2])}</p>`)
+          else html.push(`<p>${escapeHtml(line)}</p>`)
+        }
+        closeList()
+        return `<div class="legal-answer">${html.join('')}</div>`
+      }
+
+      function compactChatLines(lines) {
+        if (lines.length <= 18) return lines
+        const preferred = []
+        let bulletCount = 0
+        for (const line of lines) {
+          const isReportOnly = /^(证据清单与证据缺口|证据清单|建议路径|风险提示|下一步追问)[：:]?$/.test(line)
+          if (isReportOnly && preferred.length >= 8) break
+          const isBullet = /^(\d+[.、]|[-*•])\s*/.test(line)
+          if (isBullet) {
+            bulletCount += 1
+            if (bulletCount > 5) continue
+          }
+          preferred.push(line)
+          if (preferred.length >= 14) break
+        }
+        preferred.push('更多细节已整理在右侧分析面板，可继续补充事实后再细化。')
+        return preferred
+      }
+
+      async function send() {
+        const input = document.querySelector('#input')
+        const content = input.value.trim()
+        if (!content) return
+        input.value = ''
+        messages.push({ role: 'USER', content })
+        renderMessages()
+        const row = document.createElement('div')
+        row.className = 'row assistant'
+        const bubble = document.createElement('div')
+        bubble.className = 'bubble'
+        row.appendChild(bubble)
+        document.querySelector('#messages').appendChild(row)
+        const es = new EventSource(`${API}/api/chat/stream/${activeId}?content=${encodeURIComponent(content)}`)
+        let streamText = ''
+        es.addEventListener('status', e => { bubble.innerHTML = `<div class="stream-status">${escapeHtml(e.data)}</div>` })
+        es.addEventListener('message', e => {
+          streamText += e.data
+          bubble.innerHTML = formatAssistantContent(streamText)
+          document.querySelector('#messages').scrollTop = document.querySelector('#messages').scrollHeight
+        })
+        es.addEventListener('done', async () => {
+          es.close()
+          await openSession(activeId)
+        })
+      }
+
+      async function report() {
+        const r = await api('/api/reports/' + activeId, { method: 'POST' })
+        alert('报告已生成：' + r.title + '\\n\\n' + r.contentMd.slice(0, 220))
+      }
+
+      document.querySelector('#newBtn').onclick = createSession
+      document.querySelector('#sendBtn').onclick = send
+      document.querySelector('#reportBtn').onclick = report
+      document.querySelectorAll('[data-example]').forEach(btn => {
+        btn.onclick = () => {
+          document.querySelector('#input').value = btn.dataset.example
+        }
+      })
+      init()
+    </script>
+  </body>
+</html>
