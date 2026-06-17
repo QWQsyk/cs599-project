@@ -4,16 +4,22 @@ import re
 from docx import Document
 from docx.enum.section import WD_SECTION_START
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+
+try:
+    from pypdf import PdfReader
+except Exception:
+    PdfReader = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 REPORT_MD = DOCS / "CS599_大作业报告.md"
 REPORT_DOCX = DOCS / "CS599_大作业报告.docx"
+REPORT_PDF = DOCS / "CS599_大作业报告.pdf"
 
 
 def set_run_font(run, size=None, bold=None, name="宋体", color=None):
@@ -115,24 +121,37 @@ def add_page_number(section):
     set_run_font(run, size=10, name="Times New Roman")
 
 
-def add_toc(paragraph):
-    run = paragraph.add_run()
-    fld_begin = OxmlElement("w:fldChar")
-    fld_begin.set(qn("w:fldCharType"), "begin")
-    instr = OxmlElement("w:instrText")
-    instr.set(qn("xml:space"), "preserve")
-    instr.text = 'TOC \\o "1-3" \\h \\z \\u'
-    fld_sep = OxmlElement("w:fldChar")
-    fld_sep.set(qn("w:fldCharType"), "separate")
-    placeholder = OxmlElement("w:t")
-    placeholder.text = "右键更新域以生成目录"
-    fld_end = OxmlElement("w:fldChar")
-    fld_end.set(qn("w:fldCharType"), "end")
-    run._r.append(fld_begin)
-    run._r.append(instr)
-    run._r.append(fld_sep)
-    run._r.append(placeholder)
-    run._r.append(fld_end)
+def read_pdf_page_map():
+    if PdfReader is None or not REPORT_PDF.exists():
+        return {}
+    try:
+        reader = PdfReader(str(REPORT_PDF))
+        page_map = {}
+
+        def walk(items):
+            for item in items:
+                if isinstance(item, list):
+                    walk(item)
+                    continue
+                title = str(getattr(item, "title", "")).strip()
+                if title:
+                    page_map[title] = reader.get_destination_page_number(item) + 1
+
+        walk(reader.outline)
+        return page_map
+    except Exception:
+        return {}
+
+
+def collect_toc_items(markdown: str):
+    items = [("目录", 1)]
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## ") and stripped != "## 目录":
+            items.append((stripped[3:], 1))
+        elif stripped.startswith("### "):
+            items.append((stripped[4:], 2))
+    return items
 
 
 def add_cover(document: Document):
@@ -189,15 +208,36 @@ def add_cover(document: Document):
     document.add_page_break()
 
 
-def add_catalog(document: Document):
+def add_catalog(document: Document, markdown: str):
+    page_map = read_pdf_page_map()
+    items = collect_toc_items(markdown)
+
     p = document.add_paragraph("目录", style="Heading 1")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(50)
+    p.paragraph_format.space_after = Pt(24)
     set_paragraph_font(p, size=16, name="黑体", bold=True)
-    toc = document.add_paragraph()
-    add_toc(toc)
-    tip = document.add_paragraph("提示：在 Word 中右键目录区域选择“更新域”，即可生成正式页码目录。左侧导航窗格可直接按标题层级浏览。")
-    tip.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_paragraph_font(tip, size=10.5, color="6B7280")
+
+    for index, (title, level) in enumerate(items):
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(15.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        paragraph.paragraph_format.left_indent = Cm(0.74 if level == 2 else 0)
+        paragraph.paragraph_format.space_after = Pt(8)
+        if index == 0:
+            page = 2
+        elif index == 1:
+            page = 3
+        else:
+            page = page_map.get(title, "")
+            if isinstance(page, int):
+                page += 2
+        run = paragraph.add_run(f"{title}\t{page}")
+        set_run_font(run, size=12, bold=(level == 1), name="宋体", color="111827")
+
+        # Keep the catalog visually balanced instead of spilling a single item to a new page.
+        if index == 18:
+            document.add_page_break()
+
     document.add_page_break()
 
 
@@ -315,6 +355,10 @@ def add_body(document: Document, markdown: str):
 
         if stripped.startswith("## "):
             p = document.add_paragraph(stripped[3:], style="Heading 1")
+            if stripped == "## 摘要":
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_before = Pt(50)
+                p.paragraph_format.space_after = Pt(22)
             set_paragraph_font(p, size=16, name="黑体", bold=True, color="111827")
         elif stripped.startswith("### "):
             p = document.add_paragraph(stripped[4:], style="Heading 2")
@@ -343,8 +387,9 @@ def main():
     configure_document(document)
     add_page_number(document.sections[0])
     add_cover(document)
-    add_catalog(document)
-    add_body(document, REPORT_MD.read_text(encoding="utf-8"))
+    markdown = REPORT_MD.read_text(encoding="utf-8")
+    add_catalog(document, markdown)
+    add_body(document, markdown)
     document.save(str(REPORT_DOCX))
     print(REPORT_DOCX)
 
