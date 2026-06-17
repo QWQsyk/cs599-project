@@ -198,7 +198,7 @@ def read_pdf_page_map():
 
 
 def collect_toc_items(markdown: str):
-    items = [("目录", 1, "toc")]
+    items = []
     heading_index = 0
     for line in markdown.splitlines():
         stripped = line.strip()
@@ -278,30 +278,36 @@ def add_catalog(document: Document, markdown: str):
 
     for index, (title, level, bookmark) in enumerate(items):
         paragraph = document.add_paragraph()
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(15.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-        paragraph.paragraph_format.left_indent = Cm(0.74 if level == 2 else 0)
-        paragraph.paragraph_format.space_after = Pt(8)
-        if index == 0:
-            page = 2
-        elif index == 1:
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(14.8), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        paragraph.paragraph_format.left_indent = Cm(0.72 if level == 2 else 0)
+        paragraph.paragraph_format.right_indent = Cm(0.15)
+        paragraph.paragraph_format.line_spacing = 1.0
+        paragraph.paragraph_format.space_before = Pt(2 if level == 2 else 4)
+        paragraph.paragraph_format.space_after = Pt(4 if level == 2 else 6)
+        page = page_map.get(title, "")
+        if isinstance(page, int):
+            page += 2
+        elif title == "摘要":
             page = 3
-        else:
-            page = page_map.get(title, "")
-            if isinstance(page, int):
-                page += 2
         add_internal_hyperlink(
             paragraph,
-            f"{title}\t{page}",
+            title,
             bookmark,
             size=12,
             bold=(level == 1),
             name="宋体",
             color="111827",
         )
-
-        # Keep the catalog visually balanced instead of spilling a single item to a new page.
-        if index == 18:
-            document.add_page_break()
+        paragraph.add_run("\t")
+        add_internal_hyperlink(
+            paragraph,
+            str(page),
+            bookmark,
+            size=12,
+            bold=(level == 1),
+            name="宋体",
+            color="111827",
+        )
 
     document.add_page_break()
 
