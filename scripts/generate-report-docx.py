@@ -117,6 +117,36 @@ def add_internal_hyperlink(paragraph, text: str, anchor: str, size=12, bold=Fals
     paragraph._p.append(hyperlink)
 
 
+def add_toc_field(paragraph):
+    begin = OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = r'TOC \o "1-2" \h \z \u'
+
+    separate = OxmlElement("w:fldChar")
+    separate.set(qn("w:fldCharType"), "separate")
+
+    end = OxmlElement("w:fldChar")
+    end.set(qn("w:fldCharType"), "end")
+
+    for node in (begin, instr, separate):
+        paragraph.add_run()._r.append(node)
+    run = paragraph.add_run("请在 Word 中右键此处，选择“更新域/更新目录”生成目录。")
+    set_run_font(run, size=12, name="宋体", color="6B7280")
+    paragraph.add_run()._r.append(end)
+
+
+def enable_update_fields_on_open(document: Document):
+    settings = document.settings._element
+    update_fields = settings.find(qn("w:updateFields"))
+    if update_fields is None:
+        update_fields = OxmlElement("w:updateFields")
+        settings.append(update_fields)
+    update_fields.set(qn("w:val"), "true")
+
+
 def configure_document(document: Document):
     section = document.sections[0]
     section.top_margin = Cm(3.0)
@@ -266,48 +296,17 @@ def add_cover(document: Document):
 
 
 def add_catalog(document: Document, markdown: str):
-    page_map = read_pdf_page_map()
-    items = collect_toc_items(markdown)
-
-    p = document.add_paragraph("目录", style="Heading 1")
+    p = document.add_paragraph("目录")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_before = Pt(50)
     p.paragraph_format.space_after = Pt(24)
     set_paragraph_font(p, size=16, name="黑体", bold=True)
     add_bookmark(p, "toc", 1)
 
-    for index, (title, level, bookmark) in enumerate(items):
-        paragraph = document.add_paragraph()
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(14.8), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-        paragraph.paragraph_format.left_indent = Cm(0.72 if level == 2 else 0)
-        paragraph.paragraph_format.right_indent = Cm(0.15)
-        paragraph.paragraph_format.line_spacing = 1.0
-        paragraph.paragraph_format.space_before = Pt(2 if level == 2 else 4)
-        paragraph.paragraph_format.space_after = Pt(4 if level == 2 else 6)
-        page = page_map.get(title, "")
-        if isinstance(page, int):
-            page += 2
-        elif title == "摘要":
-            page = 3
-        add_internal_hyperlink(
-            paragraph,
-            title,
-            bookmark,
-            size=12,
-            bold=(level == 1),
-            name="宋体",
-            color="111827",
-        )
-        paragraph.add_run("\t")
-        add_internal_hyperlink(
-            paragraph,
-            str(page),
-            bookmark,
-            size=12,
-            bold=(level == 1),
-            name="宋体",
-            color="111827",
-        )
+    field_paragraph = document.add_paragraph()
+    field_paragraph.paragraph_format.line_spacing = 1.15
+    field_paragraph.paragraph_format.space_after = Pt(8)
+    add_toc_field(field_paragraph)
 
     document.add_page_break()
 
@@ -464,6 +463,7 @@ def add_body(document: Document, markdown: str):
 def main():
     document = Document()
     configure_document(document)
+    enable_update_fields_on_open(document)
     add_page_number(document.sections[0])
     add_cover(document)
     markdown = REPORT_MD.read_text(encoding="utf-8")
