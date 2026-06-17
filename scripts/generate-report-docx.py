@@ -63,6 +63,60 @@ def set_cell_margins(cell, top=80, bottom=80, left=120, right=120):
         node.set(qn("w:type"), "dxa")
 
 
+def add_bookmark(paragraph, name: str, bookmark_id: int):
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bookmark_id))
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bookmark_id))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def add_internal_hyperlink(paragraph, text: str, anchor: str, size=12, bold=False, name="宋体", color="111827"):
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("w:anchor"), anchor)
+    hyperlink.set(qn("w:history"), "1")
+
+    run = OxmlElement("w:r")
+    r_pr = OxmlElement("w:rPr")
+
+    r_style = OxmlElement("w:rStyle")
+    r_style.set(qn("w:val"), "Hyperlink")
+    r_pr.append(r_style)
+
+    fonts = OxmlElement("w:rFonts")
+    fonts.set(qn("w:ascii"), name)
+    fonts.set(qn("w:hAnsi"), name)
+    fonts.set(qn("w:eastAsia"), name)
+    r_pr.append(fonts)
+
+    for tag in ("w:sz", "w:szCs"):
+        size_node = OxmlElement(tag)
+        size_node.set(qn("w:val"), str(int(size * 2)))
+        r_pr.append(size_node)
+
+    color_node = OxmlElement("w:color")
+    color_node.set(qn("w:val"), color)
+    r_pr.append(color_node)
+
+    if bold:
+        r_pr.append(OxmlElement("w:b"))
+        r_pr.append(OxmlElement("w:bCs"))
+
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "none")
+    r_pr.append(underline)
+
+    text_node = OxmlElement("w:t")
+    text_node.set(qn("xml:space"), "preserve")
+    text_node.text = text
+    run.append(r_pr)
+    run.append(text_node)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+
 def configure_document(document: Document):
     section = document.sections[0]
     section.top_margin = Cm(3.0)
@@ -144,13 +198,16 @@ def read_pdf_page_map():
 
 
 def collect_toc_items(markdown: str):
-    items = [("目录", 1)]
+    items = [("目录", 1, "toc")]
+    heading_index = 0
     for line in markdown.splitlines():
         stripped = line.strip()
         if stripped.startswith("## ") and stripped != "## 目录":
-            items.append((stripped[3:], 1))
+            heading_index += 1
+            items.append((stripped[3:], 1, f"bm_h_{heading_index}"))
         elif stripped.startswith("### "):
-            items.append((stripped[4:], 2))
+            heading_index += 1
+            items.append((stripped[4:], 2, f"bm_h_{heading_index}"))
     return items
 
 
@@ -217,8 +274,9 @@ def add_catalog(document: Document, markdown: str):
     p.paragraph_format.space_before = Pt(50)
     p.paragraph_format.space_after = Pt(24)
     set_paragraph_font(p, size=16, name="黑体", bold=True)
+    add_bookmark(p, "toc", 1)
 
-    for index, (title, level) in enumerate(items):
+    for index, (title, level, bookmark) in enumerate(items):
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(15.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
         paragraph.paragraph_format.left_indent = Cm(0.74 if level == 2 else 0)
@@ -231,8 +289,15 @@ def add_catalog(document: Document, markdown: str):
             page = page_map.get(title, "")
             if isinstance(page, int):
                 page += 2
-        run = paragraph.add_run(f"{title}\t{page}")
-        set_run_font(run, size=12, bold=(level == 1), name="宋体", color="111827")
+        add_internal_hyperlink(
+            paragraph,
+            f"{title}\t{page}",
+            bookmark,
+            size=12,
+            bold=(level == 1),
+            name="宋体",
+            color="111827",
+        )
 
         # Keep the catalog visually balanced instead of spilling a single item to a new page.
         if index == 18:
@@ -294,6 +359,8 @@ def add_body(document: Document, markdown: str):
     in_code = False
     code_lines = []
     skip_initial_title = True
+    heading_index = 0
+    bookmark_id = 10
 
     while i < len(lines):
         line = lines[i]
@@ -354,14 +421,20 @@ def add_body(document: Document, markdown: str):
             continue
 
         if stripped.startswith("## "):
+            heading_index += 1
             p = document.add_paragraph(stripped[3:], style="Heading 1")
+            add_bookmark(p, f"bm_h_{heading_index}", bookmark_id)
+            bookmark_id += 1
             if stripped == "## 摘要":
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p.paragraph_format.space_before = Pt(50)
                 p.paragraph_format.space_after = Pt(22)
             set_paragraph_font(p, size=16, name="黑体", bold=True, color="111827")
         elif stripped.startswith("### "):
+            heading_index += 1
             p = document.add_paragraph(stripped[4:], style="Heading 2")
+            add_bookmark(p, f"bm_h_{heading_index}", bookmark_id)
+            bookmark_id += 1
             set_paragraph_font(p, size=14, name="黑体", bold=True, color="1F2937")
         elif stripped.startswith("- "):
             p = document.add_paragraph(style="List Paragraph")
