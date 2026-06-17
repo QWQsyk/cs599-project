@@ -2,55 +2,99 @@ from pathlib import Path
 import re
 
 from docx import Document
-from docx.enum.section import WD_SECTION
+from docx.enum.section import WD_SECTION_START
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 REPORT_MD = DOCS / "CS599_大作业报告.md"
 REPORT_DOCX = DOCS / "CS599_大作业报告.docx"
-TEMPLATE = DOCS / "wut-template.docx"
 
 
-def clear_document(document: Document):
-    body = document._body._element
-    for child in list(body):
-        if child.tag.endswith("sectPr"):
-            continue
-        body.remove(child)
-
-
-def set_run_font(run, size=None, bold=None, name="宋体"):
+def set_run_font(run, size=None, bold=None, name="宋体", color=None):
     run.font.name = name
     run._element.rPr.rFonts.set(qn("w:eastAsia"), name)
     if size is not None:
         run.font.size = Pt(size)
     if bold is not None:
         run.bold = bold
+    if color is not None:
+        run.font.color.rgb = RGBColor.from_string(color)
 
 
-def set_paragraph_font(paragraph, size=12, name="宋体", bold=None):
+def set_paragraph_font(paragraph, size=12, name="宋体", bold=None, color=None):
     for run in paragraph.runs:
-        set_run_font(run, size=size, name=name, bold=bold)
+        set_run_font(run, size=size, name=name, bold=bold, color=color)
 
 
-def configure_styles(document: Document):
+def set_cell_shading(cell, fill):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), fill)
+
+
+def set_cell_margins(cell, top=80, bottom=80, left=120, right=120):
+    tc = cell._tc
+    tc_pr = tc.get_or_add_tcPr()
+    tc_mar = tc_pr.first_child_found_in("w:tcMar")
+    if tc_mar is None:
+        tc_mar = OxmlElement("w:tcMar")
+        tc_pr.append(tc_mar)
+    for m, value in [("top", top), ("bottom", bottom), ("left", left), ("right", right)]:
+        node = tc_mar.find(qn(f"w:{m}"))
+        if node is None:
+            node = OxmlElement(f"w:{m}")
+            tc_mar.append(node)
+        node.set(qn("w:w"), str(value))
+        node.set(qn("w:type"), "dxa")
+
+
+def configure_document(document: Document):
+    section = document.sections[0]
+    section.top_margin = Cm(3.0)
+    section.bottom_margin = Cm(2.8)
+    section.left_margin = Cm(3.0)
+    section.right_margin = Cm(2.8)
+
     styles = document.styles
     normal = styles["Normal"]
     normal.font.name = "宋体"
     normal._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
     normal.font.size = Pt(12)
+    normal.paragraph_format.line_spacing = 1.5
+    normal.paragraph_format.space_after = Pt(4)
 
-    for style_name, size in [("Heading 1", 16), ("Heading 2", 14), ("Heading 3", 12.5)]:
-        style = styles[style_name]
-        style.font.name = "黑体"
-        style._element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
-        style.font.size = Pt(size)
-        style.font.bold = True
+    h1 = styles["Heading 1"]
+    h1.font.name = "黑体"
+    h1._element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
+    h1.font.size = Pt(16)
+    h1.font.bold = True
+    h1.font.color.rgb = RGBColor.from_string("111827")
+    h1.paragraph_format.space_before = Pt(18)
+    h1.paragraph_format.space_after = Pt(10)
+
+    h2 = styles["Heading 2"]
+    h2.font.name = "黑体"
+    h2._element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
+    h2.font.size = Pt(14)
+    h2.font.bold = True
+    h2.font.color.rgb = RGBColor.from_string("1F2937")
+    h2.paragraph_format.space_before = Pt(12)
+    h2.paragraph_format.space_after = Pt(8)
+
+    h3 = styles["Heading 3"]
+    h3.font.name = "黑体"
+    h3._element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
+    h3.font.size = Pt(12.5)
+    h3.font.bold = True
 
 
 def add_page_number(section):
@@ -68,7 +112,7 @@ def add_page_number(section):
     run._r.append(fld_begin)
     run._r.append(instr)
     run._r.append(fld_end)
-    set_run_font(run, size=10)
+    set_run_font(run, size=10, name="Times New Roman")
 
 
 def add_toc(paragraph):
@@ -92,19 +136,26 @@ def add_toc(paragraph):
 
 
 def add_cover(document: Document):
-    title = document.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.paragraph_format.space_before = Pt(90)
-    r = title.add_run("CS599 期末大作业报告")
-    set_run_font(r, size=22, bold=True, name="黑体")
+    p = document.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(52)
+    run = p.add_run("武汉理工大学")
+    set_run_font(run, size=24, bold=True, name="黑体", color="111827")
 
-    subtitle = document.add_paragraph()
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    subtitle.paragraph_format.space_after = Pt(24)
-    r = subtitle.add_run("法律责任初步分析 Agent")
-    set_run_font(r, size=18, bold=True, name="黑体")
+    p = document.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(26)
+    run = p.add_run("CS599 期末大作业报告")
+    set_run_font(run, size=22, bold=True, name="黑体", color="111827")
+
+    p = document.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(34)
+    run = p.add_run("法律责任初步分析 Agent")
+    set_run_font(run, size=20, bold=True, name="黑体", color="1D4ED8")
 
     table = document.add_table(rows=8, cols=2)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = "Table Grid"
     data = [
         ("课程名称", "企业级应用软件设计与开发"),
@@ -116,59 +167,88 @@ def add_cover(document: Document):
         ("指导教师", "威欣"),
         ("提交日期", "2026 年 6 月 22 日"),
     ]
-    for row, (key, value) in zip(table.rows, data):
+    for idx, (row, (key, value)) in enumerate(zip(table.rows, data)):
+        row.cells[0].width = Cm(4.4)
+        row.cells[1].width = Cm(9.8)
         row.cells[0].text = key
         row.cells[1].text = value
-        for cell in row.cells:
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                set_paragraph_font(p, size=12)
+        for c_idx, cell in enumerate(row.cells):
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            set_cell_margins(cell, top=130, bottom=130, left=160, right=160)
+            set_cell_shading(cell, "EEF2F7" if c_idx == 0 else "FFFFFF")
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                set_paragraph_font(paragraph, size=12, bold=(c_idx == 0), color="111827")
 
-    note = document.add_paragraph()
-    note.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    note.paragraph_format.space_before = Pt(24)
-    r = note.add_run("武汉理工大学硕士学位论文参考格式排版")
-    set_run_font(r, size=12)
+    p = document.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(26)
+    run = p.add_run("按武汉理工大学硕士学位论文参考格式排版")
+    set_run_font(run, size=11, name="宋体", color="4B5563")
+
     document.add_page_break()
 
 
-def add_manual_catalog(document: Document):
+def add_catalog(document: Document):
     p = document.add_paragraph("目录", style="Heading 1")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     set_paragraph_font(p, size=16, name="黑体", bold=True)
     toc = document.add_paragraph()
     add_toc(toc)
-    helper = document.add_paragraph("提示：在 Word 中右键上方目录区域，选择“更新域”即可生成带页码目录；左侧导航窗格可直接使用标题样式浏览。")
-    set_paragraph_font(helper, size=10)
+    tip = document.add_paragraph("提示：在 Word 中右键目录区域选择“更新域”，即可生成正式页码目录。左侧导航窗格可直接按标题层级浏览。")
+    tip.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    set_paragraph_font(tip, size=10.5, color="6B7280")
     document.add_page_break()
 
 
-def parse_inline(paragraph, text):
+def parse_inline(paragraph, text, size=12):
     parts = re.split(r"(`[^`]+`)", text)
     for part in parts:
         if not part:
             continue
         if part.startswith("`") and part.endswith("`"):
             run = paragraph.add_run(part[1:-1])
-            set_run_font(run, size=10.5, name="Consolas")
+            set_run_font(run, size=10.5, name="Consolas", color="1D4ED8")
         else:
             run = paragraph.add_run(part)
-            set_run_font(run, size=12)
+            set_run_font(run, size=size, name="宋体")
 
 
-def add_markdown_table(document: Document, rows):
+def add_table(document: Document, rows):
     table = document.add_table(rows=len(rows), cols=len(rows[0]))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = "Table Grid"
     for r_idx, row in enumerate(rows):
         for c_idx, value in enumerate(row):
             cell = table.cell(r_idx, c_idx)
             cell.text = value
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER if r_idx == 0 else WD_ALIGN_PARAGRAPH.LEFT
-                set_paragraph_font(p, size=10.5, bold=(r_idx == 0))
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            set_cell_margins(cell)
+            if r_idx == 0:
+                set_cell_shading(cell, "DBEAFE")
+            elif r_idx % 2 == 0:
+                set_cell_shading(cell, "F8FAFC")
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if r_idx == 0 else WD_ALIGN_PARAGRAPH.LEFT
+                set_paragraph_font(paragraph, size=10.2, bold=(r_idx == 0), color="111827")
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(4)
 
 
-def add_report_body(document: Document, markdown: str):
+def add_code_block(document: Document, code_lines):
+    table = document.add_table(rows=1, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cell = table.cell(0, 0)
+    set_cell_shading(cell, "F3F4F6")
+    set_cell_margins(cell, top=120, bottom=120, left=160, right=160)
+    p = cell.paragraphs[0]
+    run = p.add_run("\n".join(code_lines))
+    set_run_font(run, size=9.5, name="Consolas", color="111827")
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(4)
+
+
+def add_body(document: Document, markdown: str):
     lines = markdown.splitlines()
     i = 0
     in_code = False
@@ -181,12 +261,7 @@ def add_report_body(document: Document, markdown: str):
 
         if stripped.startswith("```"):
             if in_code:
-                p = document.add_paragraph()
-                p.paragraph_format.left_indent = Cm(0.6)
-                p.paragraph_format.space_before = Pt(3)
-                p.paragraph_format.space_after = Pt(6)
-                run = p.add_run("\n".join(code_lines))
-                set_run_font(run, size=9.5, name="Consolas")
+                add_code_block(document, code_lines)
                 in_code = False
                 code_lines = []
             else:
@@ -221,56 +296,55 @@ def add_report_body(document: Document, markdown: str):
                 table_lines.append(lines[i].strip())
                 i += 1
             rows = [[cell.strip() for cell in row.strip("|").split("|")] for row in table_lines]
-            add_markdown_table(document, rows)
+            add_table(document, rows)
             continue
 
         image_match = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", stripped)
         if image_match:
             image_path = ROOT / image_match.group(2)
             if image_path.exists():
-                pic = document.add_picture(str(image_path), width=Cm(14.5))
-                document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p = document.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run()
+                run.add_picture(str(image_path), width=Cm(14.8))
                 cap = document.add_paragraph(image_match.group(1))
                 cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                set_paragraph_font(cap, size=10.5)
+                set_paragraph_font(cap, size=10.5, color="4B5563")
             i += 1
             continue
 
         if stripped.startswith("## "):
             p = document.add_paragraph(stripped[3:], style="Heading 1")
-            set_paragraph_font(p, size=16, name="黑体", bold=True)
+            set_paragraph_font(p, size=16, name="黑体", bold=True, color="111827")
         elif stripped.startswith("### "):
             p = document.add_paragraph(stripped[4:], style="Heading 2")
-            set_paragraph_font(p, size=14, name="黑体", bold=True)
+            set_paragraph_font(p, size=14, name="黑体", bold=True, color="1F2937")
         elif stripped.startswith("- "):
             p = document.add_paragraph(style="List Paragraph")
-            parse_inline(p, "• " + stripped[2:])
+            p.paragraph_format.left_indent = Cm(0.6)
+            p.paragraph_format.first_line_indent = Cm(-0.25)
+            parse_inline(p, "• " + stripped[2:], size=11.5)
         elif re.match(r"^\d+\.\s+", stripped):
             p = document.add_paragraph()
+            p.paragraph_format.first_line_indent = Cm(0.74)
+            p.paragraph_format.line_spacing = 1.5
             parse_inline(p, stripped)
         else:
             p = document.add_paragraph()
             p.paragraph_format.first_line_indent = Cm(0.74)
             p.paragraph_format.line_spacing = 1.5
+            p.paragraph_format.space_after = Pt(5)
             parse_inline(p, stripped)
         i += 1
 
 
 def main():
-    document = Document(str(TEMPLATE)) if TEMPLATE.exists() else Document()
-    clear_document(document)
-    configure_styles(document)
-
-    for section in document.sections:
-        section.top_margin = Cm(3.5)
-        section.bottom_margin = Cm(3.5)
-        section.left_margin = Cm(3.2)
-        section.right_margin = Cm(3.2)
-        add_page_number(section)
-
+    document = Document()
+    configure_document(document)
+    add_page_number(document.sections[0])
     add_cover(document)
-    add_manual_catalog(document)
-    add_report_body(document, REPORT_MD.read_text(encoding="utf-8"))
+    add_catalog(document)
+    add_body(document, REPORT_MD.read_text(encoding="utf-8"))
     document.save(str(REPORT_DOCX))
     print(REPORT_DOCX)
 
